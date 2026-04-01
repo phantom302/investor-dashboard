@@ -1173,12 +1173,52 @@
   }
 
   // ─── FETCH HELPERS ────────────────────────────────────
-  async function fmpGet(path) {
+  // FMP free tier has CORS restrictions on some endpoints.
+  // We try direct first, then fall back to a public CORS proxy.
+  const CORS_PROXY = 'https://corsproxy.io/?url=';
+
+  async function fmpGet(path, allowFail = false) {
     const sep = path.includes('?') ? '&' : '?';
-    const url = `${BASE}${path}${sep}apikey=${API_KEY}`;
-    const r = await fetch(url);
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    return r.json();
+    const directUrl = `${BASE}${path}${sep}apikey=${API_KEY}`;
+    try {
+      const r = await fetch(directUrl, { mode: 'cors' });
+      if (r.status === 403 || r.status === 401) {
+        return await fmpGetViaProxy(directUrl, allowFail);
+      }
+      if (!r.ok) {
+        if (allowFail) return null;
+        throw new Error('HTTP ' + r.status);
+      }
+      const data = await r.json();
+      if (data && data['Error Message']) {
+        if (allowFail) return null;
+        throw new Error(data['Error Message']);
+      }
+      return data;
+    } catch (err) {
+      if (err.message && (err.message.startsWith('HTTP ') || err.message.includes('Error Message'))) throw err;
+      return await fmpGetViaProxy(directUrl, allowFail);
+    }
+  }
+
+  async function fmpGetViaProxy(originalUrl, allowFail) {
+    try {
+      const proxyUrl = 'https://corsproxy.io/?url=' + encodeURIComponent(originalUrl);
+      const r = await fetch(proxyUrl);
+      if (!r.ok) {
+        if (allowFail) return null;
+        throw new Error('HTTP ' + r.status + ' (via proxy)');
+      }
+      const data = await r.json();
+      if (data && data['Error Message']) {
+        if (allowFail) return null;
+        throw new Error(data['Error Message']);
+      }
+      return data;
+    } catch (err) {
+      if (allowFail) return null;
+      throw err;
+    }
   }
 
   // ─── DEMO DATA ────────────────────────────────────────
@@ -1244,24 +1284,54 @@
         await sleep(900);
         data = getDemoData();
       } else {
-        setLoadingText('Fetching company profile...');
-        const [profile, ratios, income, cashflow, quote, insiders, historical] = await Promise.all([
+        // Fetch core data first (required), then optional endpoints gracefully
+        setLoadingText('Fetching quote & profile...');
+        const [profile, quote] = await Promise.all([
           fmpGet(`/v3/profile/${ticker}`),
-          fmpGet(`/v3/ratios/${ticker}?limit=1`),
-          fmpGet(`/v3/income-statement/${ticker}?limit=3`),
-          fmpGet(`/v3/cash-flow-statement/${ticker}?limit=1`),
-          fmpGet(`/v3/quote/${ticker}`),
-          fmpGet(`/v4/insider-trading?symbol=${ticker}&limit=20`),
-          fmpGet(`/v3/historical-price-full/${ticker}?timeseries=365`)
+          fmpGet(`/v3/quote/${ticker}`)
         ]);
-        data = { profile, ratios, income, cashflow, quote, insiders, historical };
+        if (!profile || !profile[0]) throw new Error('Ticker not found. Check the symbol and try again.');
+
+        setLoadingText('Fetching financials...');
+        const [ratios, income, cashflow] = await Promise.all([
+          fmpGet(`/v3/ratios/${ticker}?limit=1`, true),
+          fmpGet(`/v3/income-statement/${ticker}?limit=3`, true),
+          fmpGet(`/v3/cash-flow-statement/${ticker}?limit=1`, true)
+        ]);
+
+        setLoadingText('Fetching price history & insider data...');
+        const [historical, insiders] = await Promise.all([
+          fmpGet(`/v3/historical-price-full/${ticker}?timeseries=365`, true),
+          fmpGet(`/v4/insider-trading?symbol=${ticker}&limit=20`, true)
+        ]);
+
+        data = {
+          profile,
+          ratios: ratios || [],
+          income: income || [],
+          cashflow: cashflow || [],
+          quote,
+          insiders: insiders || [],
+          historical: historical || {}
+        };
       }
 
       setLoadingText('Computing signals...');
       await sleep(300);
       renderDashboard(ticker, data);
     } catch (err) {
-      showError(`Could not fetch data for "${ticker}". Check your API key and ticker symbol. (${err.message})`);
+      const msg = err.message || '';
+      let hint = '';
+      if (msg.includes('403') || msg.includes('401')) {
+        hint = 'Your API key was rejected (403). Double-check it at financialmodelingprep.com — free keys sometimes need email verification first.';
+      } else if (msg.includes('not found') || msg.includes('Invalid')) {
+        hint = 'Ticker not recognised. Try a US-listed symbol like AAPL, MSFT, or NVDA.';
+      } else if (msg.includes('Failed to fetch') || msg.includes('NetworkError') || msg.includes('proxy')) {
+        hint = 'Network error — the request was blocked. Try opening the file from a local server or use Demo Mode to test the interface.';
+      } else {
+        hint = 'Verify your FMP API key is correct and the ticker is a valid US-listed symbol.';
+      }
+      showError(`⚠ ${hint} (${msg})`);
     } finally {
       setLoading(false);
     }
