@@ -1,0 +1,1845 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Signal — Retail Investor Dashboard</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=JetBrains+Mono:wght@300;400;600&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0a08;
+    --surface: #111110;
+    --surface2: #1a1a18;
+    --border: #2a2a26;
+    --gold: #c9a84c;
+    --gold-dim: #8a6f2e;
+    --green: #4caf7d;
+    --red: #e05c5c;
+    --amber: #e09a3e;
+    --text: #e8e6df;
+    --text-dim: #888880;
+    --text-faint: #444440;
+    --accent: #c9a84c;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Instrument Sans', sans-serif;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Subtle grain overlay */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+    pointer-events: none;
+    z-index: 9999;
+    opacity: 0.4;
+  }
+
+  header {
+    border-bottom: 1px solid var(--border);
+    padding: 24px 40px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky;
+    top: 0;
+    background: rgba(10,10,8,0.95);
+    backdrop-filter: blur(12px);
+    z-index: 100;
+  }
+
+  .logo {
+    font-family: 'DM Serif Display', serif;
+    font-size: 1.6rem;
+    color: var(--gold);
+    letter-spacing: -0.02em;
+  }
+
+  .logo span {
+    font-style: italic;
+    color: var(--text-dim);
+    font-size: 0.9rem;
+    display: block;
+    font-family: 'JetBrains Mono', monospace;
+    font-style: normal;
+    letter-spacing: 0.08em;
+    margin-top: -4px;
+  }
+
+  .header-right {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+  }
+
+  .ticker-input-group {
+    display: flex;
+    gap: 0;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+
+  #tickerInput {
+    background: var(--surface);
+    border: none;
+    padding: 10px 16px;
+    color: var(--text);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.9rem;
+    width: 140px;
+    text-transform: uppercase;
+    outline: none;
+    letter-spacing: 0.1em;
+  }
+
+  #tickerInput::placeholder { color: var(--text-faint); }
+
+  #analyzeBtn {
+    background: var(--gold);
+    color: #0a0a08;
+    border: none;
+    padding: 10px 20px;
+    font-family: 'Instrument Sans', sans-serif;
+    font-weight: 600;
+    font-size: 0.85rem;
+    cursor: pointer;
+    letter-spacing: 0.04em;
+    transition: background 0.2s;
+  }
+
+  #analyzeBtn:hover { background: #e0bc60; }
+  #analyzeBtn:disabled { background: var(--text-faint); cursor: not-allowed; }
+
+  .api-note {
+    font-size: 0.72rem;
+    color: var(--text-faint);
+    font-family: 'JetBrains Mono', monospace;
+    text-align: right;
+    line-height: 1.5;
+  }
+
+  .api-note a { color: var(--gold-dim); text-decoration: none; }
+  .api-note a:hover { color: var(--gold); }
+
+  main {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 40px;
+  }
+
+  /* Hero / company card */
+  #companyCard {
+    display: none;
+    margin-bottom: 40px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 32px;
+    background: var(--surface);
+    position: relative;
+    overflow: hidden;
+    animation: fadeUp 0.4s ease;
+  }
+
+  #companyCard::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, var(--gold), transparent);
+  }
+
+  .company-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 20px;
+  }
+
+  .company-name {
+    font-family: 'DM Serif Display', serif;
+    font-size: 2.4rem;
+    line-height: 1;
+    letter-spacing: -0.03em;
+  }
+
+  .company-ticker {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.85rem;
+    color: var(--gold);
+    letter-spacing: 0.12em;
+    margin-top: 6px;
+  }
+
+  .overall-score {
+    text-align: right;
+  }
+
+  .score-number {
+    font-family: 'DM Serif Display', serif;
+    font-size: 3.5rem;
+    line-height: 1;
+    letter-spacing: -0.04em;
+  }
+
+  .score-label {
+    font-size: 0.72rem;
+    color: var(--text-dim);
+    font-family: 'JetBrains Mono', monospace;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin-top: 4px;
+  }
+
+  .score-verdict {
+    font-size: 0.8rem;
+    font-weight: 600;
+    margin-top: 6px;
+    padding: 4px 10px;
+    border-radius: 4px;
+    display: inline-block;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  .verdict-strong { background: rgba(76,175,125,0.15); color: var(--green); }
+  .verdict-moderate { background: rgba(224,154,62,0.15); color: var(--amber); }
+  .verdict-weak { background: rgba(224,92,92,0.15); color: var(--red); }
+  .verdict-caution { background: rgba(224,154,62,0.15); color: var(--amber); }
+
+  .company-meta {
+    display: flex;
+    gap: 28px;
+    margin-top: 20px;
+    padding-top: 20px;
+    border-top: 1px solid var(--border);
+    flex-wrap: wrap;
+  }
+
+  .meta-item label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.65rem;
+    color: var(--text-faint);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    display: block;
+    margin-bottom: 3px;
+  }
+
+  .meta-item .val {
+    font-size: 0.95rem;
+    font-weight: 500;
+  }
+
+  /* Signal grid */
+  .section-title {
+    font-family: 'DM Serif Display', serif;
+    font-size: 1.3rem;
+    color: var(--text-dim);
+    margin-bottom: 20px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .section-title::before {
+    content: '';
+    width: 3px;
+    height: 20px;
+    background: var(--gold);
+    border-radius: 2px;
+  }
+
+  .signals-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+    gap: 16px;
+    margin-bottom: 40px;
+  }
+
+  .signal-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 24px;
+    position: relative;
+    overflow: hidden;
+    opacity: 0;
+    transform: translateY(10px);
+    transition: opacity 0.4s ease, transform 0.4s ease, border-color 0.2s;
+  }
+
+  .signal-card.visible {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  .signal-card:hover {
+    border-color: var(--gold-dim);
+  }
+
+  .signal-card .signal-status-bar {
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 3px;
+  }
+
+  .status-bullish .signal-status-bar { background: var(--green); }
+  .status-bearish .signal-status-bar { background: var(--red); }
+  .status-neutral .signal-status-bar { background: var(--amber); }
+  .status-unknown .signal-status-bar { background: var(--text-faint); }
+
+  .signal-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+
+  .signal-name {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.65rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+  }
+
+  .signal-badge {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.65rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 3px 8px;
+    border-radius: 3px;
+    font-weight: 600;
+  }
+
+  .badge-bullish { background: rgba(76,175,125,0.15); color: var(--green); }
+  .badge-bearish { background: rgba(224,92,92,0.15); color: var(--red); }
+  .badge-neutral { background: rgba(224,154,62,0.15); color: var(--amber); }
+  .badge-unknown { background: rgba(100,100,90,0.15); color: var(--text-faint); }
+
+  .signal-value {
+    font-family: 'DM Serif Display', serif;
+    font-size: 2rem;
+    letter-spacing: -0.03em;
+    line-height: 1;
+    margin-bottom: 4px;
+  }
+
+  .signal-context {
+    font-size: 0.8rem;
+    color: var(--text-dim);
+    line-height: 1.5;
+  }
+
+  .signal-action {
+    margin-top: 14px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+    font-size: 0.8rem;
+    line-height: 1.6;
+  }
+
+  .signal-action strong {
+    color: var(--gold);
+    font-weight: 600;
+  }
+
+  /* Progress bar for scores */
+  .score-bar-wrap {
+    margin-top: 10px;
+  }
+
+  .score-bar-track {
+    height: 3px;
+    background: var(--border);
+    border-radius: 2px;
+    overflow: hidden;
+    margin-top: 6px;
+  }
+
+  .score-bar-fill {
+    height: 100%;
+    border-radius: 2px;
+    transition: width 0.8s cubic-bezier(0.16,1,0.3,1);
+  }
+
+  .fill-green { background: var(--green); }
+  .fill-amber { background: var(--amber); }
+  .fill-red { background: var(--red); }
+
+  /* Macro section */
+  .macro-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 14px;
+    margin-bottom: 40px;
+  }
+
+  .macro-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 18px 20px;
+    opacity: 0;
+    transform: translateY(8px);
+    transition: opacity 0.4s ease, transform 0.4s ease;
+  }
+
+  .macro-card.visible { opacity: 1; transform: translateY(0); }
+
+  .macro-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.6rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+    margin-bottom: 6px;
+  }
+
+  .macro-value {
+    font-family: 'DM Serif Display', serif;
+    font-size: 1.5rem;
+    letter-spacing: -0.02em;
+  }
+
+  .macro-note {
+    font-size: 0.75rem;
+    color: var(--text-dim);
+    margin-top: 4px;
+  }
+
+  /* Empty state */
+  #emptyState {
+    text-align: center;
+    padding: 100px 40px;
+  }
+
+  .empty-headline {
+    font-family: 'DM Serif Display', serif;
+    font-size: 3rem;
+    color: var(--text-dim);
+    letter-spacing: -0.04em;
+    line-height: 1.1;
+    margin-bottom: 16px;
+  }
+
+  .empty-headline em {
+    font-style: italic;
+    color: var(--gold);
+  }
+
+  .empty-sub {
+    font-size: 0.9rem;
+    color: var(--text-faint);
+    max-width: 480px;
+    margin: 0 auto 40px;
+    line-height: 1.7;
+  }
+
+  .example-tickers {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+
+  .example-pill {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.8rem;
+    padding: 8px 16px;
+    border: 1px solid var(--border);
+    border-radius: 100px;
+    color: var(--text-dim);
+    cursor: pointer;
+    transition: border-color 0.2s, color 0.2s;
+    letter-spacing: 0.1em;
+  }
+
+  .example-pill:hover { border-color: var(--gold); color: var(--gold); }
+
+  /* Error state */
+  .error-msg {
+    background: rgba(224,92,92,0.08);
+    border: 1px solid rgba(224,92,92,0.25);
+    border-radius: 8px;
+    padding: 16px 20px;
+    font-size: 0.85rem;
+    color: var(--red);
+    margin-bottom: 20px;
+    display: none;
+  }
+
+  /* Loading */
+  .loading-overlay {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 80px 40px;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  .loading-text {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.8rem;
+    color: var(--text-faint);
+    letter-spacing: 0.1em;
+  }
+
+  .spinner {
+    width: 36px;
+    height: 36px;
+    border: 2px solid var(--border);
+    border-top-color: var(--gold);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(16px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  /* API key modal */
+  .modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.85);
+    z-index: 200;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+
+  .modal {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 36px;
+    max-width: 500px;
+    width: 100%;
+    position: relative;
+  }
+
+  .modal-title {
+    font-family: 'DM Serif Display', serif;
+    font-size: 1.6rem;
+    margin-bottom: 8px;
+    letter-spacing: -0.03em;
+  }
+
+  .modal-sub {
+    font-size: 0.85rem;
+    color: var(--text-dim);
+    line-height: 1.6;
+    margin-bottom: 24px;
+  }
+
+  .modal-sub a { color: var(--gold); text-decoration: none; }
+
+  .input-group {
+    margin-bottom: 20px;
+  }
+
+  .input-group label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.65rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+    display: block;
+    margin-bottom: 8px;
+  }
+
+  .input-group input {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px 16px;
+    color: var(--text);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.85rem;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+
+  .input-group input:focus { border-color: var(--gold-dim); }
+
+  .modal-actions {
+    display: flex;
+    gap: 12px;
+  }
+
+  .btn-primary {
+    flex: 1;
+    background: var(--gold);
+    color: #0a0a08;
+    border: none;
+    padding: 12px 24px;
+    border-radius: 6px;
+    font-family: 'Instrument Sans', sans-serif;
+    font-weight: 600;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: background 0.2s;
+    letter-spacing: 0.02em;
+  }
+
+  .btn-primary:hover { background: #e0bc60; }
+
+  .btn-demo {
+    background: var(--surface2);
+    color: var(--text-dim);
+    border: 1px solid var(--border);
+    padding: 12px 20px;
+    border-radius: 6px;
+    font-family: 'Instrument Sans', sans-serif;
+    font-weight: 500;
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: border-color 0.2s, color 0.2s;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+  }
+
+  .btn-demo:hover { border-color: var(--text-faint); color: var(--text); }
+
+  /* Settings button */
+  .settings-btn {
+    background: none;
+    border: 1px solid var(--border);
+    padding: 9px 14px;
+    border-radius: 6px;
+    cursor: pointer;
+    color: var(--text-faint);
+    font-size: 0.85rem;
+    transition: color 0.2s, border-color 0.2s;
+  }
+
+  .settings-btn:hover { color: var(--gold); border-color: var(--gold-dim); }
+
+  .disclaimer {
+    border-top: 1px solid var(--border);
+    padding-top: 24px;
+    margin-top: 20px;
+    font-size: 0.72rem;
+    color: var(--text-faint);
+    line-height: 1.7;
+    text-align: center;
+  }
+
+  /* ── TOP PERFORMERS BAR ─────────────────────────────── */
+  #topBar {
+    background: #0d0d0b;
+    border-bottom: 1px solid var(--border);
+    padding: 0 40px;
+    display: flex;
+    align-items: stretch;
+    gap: 0;
+    min-height: 52px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  #topBar::after {
+    content: '';
+    position: absolute;
+    right: 0; top: 0; bottom: 0;
+    width: 80px;
+    background: linear-gradient(to right, transparent, #0d0d0b);
+    pointer-events: none;
+    z-index: 2;
+  }
+
+  .topbar-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.6rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--gold);
+    display: flex;
+    align-items: center;
+    padding-right: 20px;
+    border-right: 1px solid var(--border);
+    margin-right: 0;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  .topbar-label span {
+    display: block;
+    color: var(--text-faint);
+    font-size: 0.55rem;
+    margin-top: 2px;
+    letter-spacing: 0.1em;
+  }
+
+  .topbar-scroll {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    padding: 8px 16px 8px 16px;
+    flex: 1;
+  }
+
+  .topbar-scroll::-webkit-scrollbar { display: none; }
+
+  .top-ticker-card {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 7px 14px;
+    cursor: pointer;
+    transition: border-color 0.2s, background 0.2s;
+    flex-shrink: 0;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .top-ticker-card:hover {
+    border-color: var(--gold-dim);
+    background: var(--surface2);
+  }
+
+  .top-ticker-card.rank-1 { border-color: rgba(201,168,76,0.4); }
+  .top-ticker-card.rank-1::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 1.5px;
+    background: var(--gold);
+  }
+
+  .tc-rank {
+    font-family: 'DM Serif Display', serif;
+    font-size: 1rem;
+    color: var(--text-faint);
+    line-height: 1;
+    min-width: 14px;
+  }
+
+  .rank-1 .tc-rank { color: var(--gold); }
+
+  .tc-info { display: flex; flex-direction: column; gap: 1px; }
+
+  .tc-ticker {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.8rem;
+    letter-spacing: 0.1em;
+    font-weight: 600;
+    color: var(--text);
+    line-height: 1;
+  }
+
+  .tc-name {
+    font-size: 0.65rem;
+    color: var(--text-faint);
+    white-space: nowrap;
+    max-width: 120px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    line-height: 1;
+  }
+
+  .tc-right { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+
+  .tc-change {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.8rem;
+    font-weight: 600;
+    line-height: 1;
+  }
+
+  .tc-change.pos { color: var(--green); }
+  .tc-change.neg { color: var(--red); }
+
+  .tc-streak {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.58rem;
+    color: var(--text-faint);
+    letter-spacing: 0.06em;
+    white-space: nowrap;
+    line-height: 1;
+  }
+
+  .tc-streak.hot { color: var(--amber); }
+
+  .topbar-loading {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 16px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.65rem;
+    color: var(--text-faint);
+    letter-spacing: 0.1em;
+  }
+
+  .mini-spinner {
+    width: 14px; height: 14px;
+    border: 1.5px solid var(--border);
+    border-top-color: var(--gold);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  .topbar-divider {
+    width: 1px;
+    background: var(--border);
+    margin: 10px 0;
+    flex-shrink: 0;
+  }
+
+  .topbar-refresh {
+    display: flex;
+    align-items: center;
+    padding: 0 16px;
+    flex-shrink: 0;
+  }
+
+  .refresh-btn {
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 5px 10px;
+    cursor: pointer;
+    color: var(--text-faint);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.6rem;
+    letter-spacing: 0.1em;
+    transition: color 0.2s, border-color 0.2s;
+    white-space: nowrap;
+  }
+
+  .refresh-btn:hover { color: var(--gold); border-color: var(--gold-dim); }
+
+  .leaderboard-toggle {
+    display: flex;
+    align-items: center;
+    padding: 0 0 0 10px;
+    flex-shrink: 0;
+  }
+
+  .lb-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--text-faint);
+    font-size: 0.65rem;
+    font-family: 'JetBrains Mono', monospace;
+    letter-spacing: 0.08em;
+    padding: 5px 8px;
+    transition: color 0.2s;
+    white-space: nowrap;
+  }
+
+  .lb-btn:hover { color: var(--gold); }
+
+  /* Leaderboard panel */
+  #leaderboardPanel {
+    display: none;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 24px 40px;
+    animation: fadeUp 0.25s ease;
+  }
+
+  .lb-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 20px;
+  }
+
+  .lb-title {
+    font-family: 'DM Serif Display', serif;
+    font-size: 1.1rem;
+    letter-spacing: -0.02em;
+  }
+
+  .lb-subtitle {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.6rem;
+    color: var(--text-faint);
+    letter-spacing: 0.1em;
+    margin-top: 2px;
+  }
+
+  .lb-clear-btn {
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 5px 12px;
+    cursor: pointer;
+    color: var(--text-faint);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.6rem;
+    letter-spacing: 0.1em;
+    transition: color 0.2s, border-color 0.2s;
+  }
+
+  .lb-clear-btn:hover { color: var(--red); border-color: var(--red); }
+
+  .lb-table {
+    display: grid;
+    grid-template-columns: 40px 1fr 1fr 80px 80px 100px;
+    gap: 0;
+    font-size: 0.8rem;
+  }
+
+  .lb-table-header {
+    display: contents;
+  }
+
+  .lb-table-header > div {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.6rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+    padding: 0 0 10px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .lb-row {
+    display: contents;
+    cursor: pointer;
+  }
+
+  .lb-row > div {
+    padding: 10px 0;
+    border-bottom: 1px solid rgba(42,42,38,0.5);
+    display: flex;
+    align-items: center;
+    transition: color 0.15s;
+  }
+
+  .lb-row:hover > div { color: var(--gold); }
+
+  .lb-row-rank {
+    font-family: 'DM Serif Display', serif;
+    font-size: 1rem;
+    color: var(--text-faint);
+  }
+
+  .lb-row-rank.top3 { color: var(--gold); }
+
+  .lb-bar-wrap {
+    padding-right: 20px !important;
+  }
+
+  .lb-bar {
+    height: 2px;
+    background: var(--gold);
+    border-radius: 1px;
+    opacity: 0.4;
+  }
+
+  @media (max-width: 700px) {
+    #topBar { padding: 0 16px; }
+    #leaderboardPanel { padding: 20px; }
+    .lb-table { grid-template-columns: 30px 1fr 60px 60px; }
+    .lb-table-header > div:nth-child(3),
+    .lb-table-header > div:nth-child(4),
+    .lb-row > div:nth-child(3),
+    .lb-row > div:nth-child(4) { display: none; }
+    header { padding: 16px 20px; flex-wrap: wrap; gap: 12px; }
+    main { padding: 24px 20px; }
+    .signals-grid { grid-template-columns: 1fr; }
+    .macro-grid { grid-template-columns: 1fr 1fr; }
+    .company-name { font-size: 1.8rem; }
+    .score-number { font-size: 2.5rem; }
+    .empty-headline { font-size: 2rem; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Top Performers Bar -->
+<div id="topBar">
+  <div class="topbar-label">
+    TOP 5 TODAY<span id="topBarDate">—</span>
+  </div>
+  <div class="topbar-scroll" id="topBarScroll">
+    <div class="topbar-loading" id="topBarLoading">
+      <div class="mini-spinner"></div> FETCHING MOVERS...
+    </div>
+  </div>
+  <div class="topbar-divider"></div>
+  <div class="leaderboard-toggle">
+    <button class="lb-btn" onclick="toggleLeaderboard()">365-DAY BOARD ↓</button>
+  </div>
+  <div class="topbar-refresh">
+    <button class="refresh-btn" onclick="loadTopMovers()">↻ REFRESH</button>
+  </div>
+</div>
+
+<!-- Leaderboard Panel -->
+<div id="leaderboardPanel">
+  <div class="lb-header">
+    <div>
+      <div class="lb-title">365-Day Top 5 Leaderboard</div>
+      <div class="lb-subtitle">TIMES APPEARING IN DAILY TOP 5 · TRACKED SINCE FIRST USE</div>
+    </div>
+    <button class="lb-clear-btn" onclick="clearLeaderboard()">CLEAR DATA</button>
+  </div>
+  <div class="lb-table" id="lbTable">
+    <div class="lb-table-header">
+      <div>#</div><div>TICKER</div><div>COMPANY</div><div>DAYS IN TOP 5</div><div>LAST SEEN</div><div>FREQUENCY</div>
+    </div>
+  </div>
+</div>
+
+<!-- API Key Modal -->
+<div class="modal-backdrop" id="modalBackdrop">
+  <div class="modal">
+    <div class="modal-title">Connect your data</div>
+    <p class="modal-sub">
+      This dashboard uses <a href="https://financialmodelingprep.com/developer/docs/" target="_blank">Financial Modeling Prep</a> for fundamental data (free tier available — 250 calls/day). Get a free API key in under a minute, or use demo mode with sample data.
+    </p>
+    <div class="input-group">
+      <label>FMP API Key</label>
+      <input type="text" id="apiKeyInput" placeholder="Enter your FMP API key..." autocomplete="off">
+    </div>
+    <div class="modal-actions">
+      <button class="btn-primary" onclick="saveApiKey()">Connect →</button>
+      <button class="btn-demo" onclick="useDemoMode()">Use Demo Data</button>
+    </div>
+  </div>
+</div>
+
+<!-- Header -->
+<header>
+  <div class="logo">
+    Signal
+    <span>Buffett · Simons · Framework</span>
+  </div>
+  <div class="header-right">
+    <div class="ticker-input-group">
+      <input type="text" id="tickerInput" placeholder="AAPL" maxlength="8">
+      <button id="analyzeBtn" onclick="analyze()">Analyze</button>
+    </div>
+    <button class="settings-btn" onclick="showModal()" title="API Settings">⚙</button>
+  </div>
+</header>
+
+<main>
+  <div class="error-msg" id="errorMsg"></div>
+
+  <!-- Loading -->
+  <div class="loading-overlay" id="loadingOverlay" style="display:none; flex-direction:column;">
+    <div class="spinner"></div>
+    <div class="loading-text" id="loadingText">Fetching fundamental data...</div>
+  </div>
+
+  <!-- Empty State -->
+  <div id="emptyState">
+    <div class="empty-headline">All signal,<br><em>no noise.</em></div>
+    <p class="empty-sub">Enter any US stock ticker to analyze it through the Buffett–Simons lens: earnings quality, valuation, momentum, insider buying, and macro context.</p>
+    <div class="example-tickers">
+      <span class="example-pill" onclick="quickAnalyze('AAPL')">AAPL</span>
+      <span class="example-pill" onclick="quickAnalyze('MSFT')">MSFT</span>
+      <span class="example-pill" onclick="quickAnalyze('BRK.B')">BRK.B</span>
+      <span class="example-pill" onclick="quickAnalyze('JNJ')">JNJ</span>
+      <span class="example-pill" onclick="quickAnalyze('NVDA')">NVDA</span>
+      <span class="example-pill" onclick="quickAnalyze('KO')">KO</span>
+    </div>
+  </div>
+
+  <!-- Company Card -->
+  <div id="companyCard">
+    <div class="company-header">
+      <div>
+        <div class="company-name" id="companyName">—</div>
+        <div class="company-ticker" id="companyTicker">—</div>
+      </div>
+      <div class="overall-score">
+        <div class="score-number" id="overallScore">—</div>
+        <div class="score-label">Signal Score / 100</div>
+        <div class="score-verdict" id="overallVerdict">—</div>
+      </div>
+    </div>
+    <div class="company-meta">
+      <div class="meta-item">
+        <label>Sector</label>
+        <div class="val" id="metaSector">—</div>
+      </div>
+      <div class="meta-item">
+        <label>Market Cap</label>
+        <div class="val" id="metaCap">—</div>
+      </div>
+      <div class="meta-item">
+        <label>Current Price</label>
+        <div class="val" id="metaPrice">—</div>
+      </div>
+      <div class="meta-item">
+        <label>52-Week Range</label>
+        <div class="val" id="metaRange">—</div>
+      </div>
+      <div class="meta-item">
+        <label>Exchange</label>
+        <div class="val" id="metaExchange">—</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Buffett Signals -->
+  <div id="buffettSection" style="display:none;">
+    <div class="section-title">Buffett Signals — Earnings Quality & Value</div>
+    <div class="signals-grid" id="buffettGrid"></div>
+  </div>
+
+  <!-- Simons Signals -->
+  <div id="simonsSection" style="display:none;">
+    <div class="section-title">Simons Signals — Quantitative & Momentum</div>
+    <div class="signals-grid" id="simonsGrid"></div>
+  </div>
+
+  <!-- Macro Section -->
+  <div id="macroSection" style="display:none;">
+    <div class="section-title">Macro Context — Market Environment</div>
+    <div class="macro-grid" id="macroGrid"></div>
+  </div>
+
+  <!-- Disclaimer -->
+  <div class="disclaimer" id="disclaimer" style="display:none;">
+    For informational purposes only. Not financial advice. Always do your own research before investing.
+    Data sourced from Financial Modeling Prep. Insider data may have a reporting lag.
+  </div>
+</main>
+
+<script>
+  // ─── STATE ───────────────────────────────────────────
+  let API_KEY = localStorage.getItem('fmp_key') || '';
+  let DEMO_MODE = false;
+  const BASE = 'https://financialmodelingprep.com/api';
+
+  // ─── INIT ─────────────────────────────────────────────
+  window.onload = () => {
+    if (API_KEY) document.getElementById('modalBackdrop').style.display = 'none';
+    document.getElementById('tickerInput').addEventListener('keydown', e => {
+      if (e.key === 'Enter') analyze();
+    });
+    initTopBar();
+  };
+
+  function showModal() {
+    document.getElementById('apiKeyInput').value = API_KEY;
+    document.getElementById('modalBackdrop').style.display = 'flex';
+  }
+
+  function saveApiKey() {
+    const key = document.getElementById('apiKeyInput').value.trim();
+    if (!key) return;
+    API_KEY = key;
+    DEMO_MODE = false;
+    localStorage.setItem('fmp_key', key);
+    document.getElementById('modalBackdrop').style.display = 'none';
+  }
+
+  function useDemoMode() {
+    DEMO_MODE = true;
+    API_KEY = 'demo';
+    document.getElementById('modalBackdrop').style.display = 'none';
+    initTopBar();
+    quickAnalyze('AAPL');
+  }
+
+  function quickAnalyze(ticker) {
+    document.getElementById('tickerInput').value = ticker;
+    analyze();
+  }
+
+  // ─── FETCH HELPERS ────────────────────────────────────
+  async function fmpGet(path) {
+    const sep = path.includes('?') ? '&' : '?';
+    const url = `${BASE}${path}${sep}apikey=${API_KEY}`;
+    const r = await fetch(url);
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return r.json();
+  }
+
+  // ─── DEMO DATA ────────────────────────────────────────
+  function getDemoData() {
+    return {
+      profile: [{
+        companyName: 'Apple Inc.', symbol: 'AAPL', sector: 'Technology',
+        price: 189.30, mktCap: 2940000000000, exchange: 'NASDAQ',
+        range: '164.08 - 237.23', currency: 'USD',
+        description: 'Apple Inc. designs, manufactures, and markets smartphones, personal computers, tablets, wearables, and accessories worldwide.'
+      }],
+      ratios: [{
+        returnOnEquity: 1.47, freeCashFlowPerShare: 6.82, priceToFreeCashFlowsRatio: 27.8,
+        priceEarningsRatio: 29.4, priceToBookRatio: 45.2, debtEquityRatio: -1.72,
+        currentRatio: 0.94, grossProfitMargin: 0.451, netProfitMargin: 0.253,
+        returnOnAssets: 0.298, dividendYield: 0.0053
+      }],
+      income: [
+        { revenue: 383285000000, netIncome: 96995000000, eps: 6.13, period: 'FY2023' },
+        { revenue: 394328000000, netIncome: 99803000000, eps: 6.43, period: 'FY2022' },
+        { revenue: 365817000000, netIncome: 94680000000, eps: 5.89, period: 'FY2021' },
+      ],
+      cashflow: [{ freeCashFlow: 105000000000, capitalExpenditure: -10959000000 }],
+      quote: [{ price: 189.30, yearHigh: 237.23, yearLow: 164.08, volume: 52341200, avgVolume: 55847000, pe: 29.4, eps: 6.43 }],
+      insiders: [
+        { transactionType: 'P-Purchase', reportingName: 'Cook Timothy D', transactionDate: '2024-02-15', securitiesTransacted: 50000, price: 182.50 },
+        { transactionType: 'S-Sale', reportingName: 'Maestri Luca', transactionDate: '2024-01-20', securitiesTransacted: 20000, price: 188.40 },
+        { transactionType: 'S-Sale', reportingName: 'Williams Jeffrey E', transactionDate: '2024-01-18', securitiesTransacted: 15000, price: 186.20 },
+      ],
+      historical: generateDemoHistorical()
+    };
+  }
+
+  function generateDemoHistorical() {
+    const prices = [];
+    let price = 160;
+    const now = new Date();
+    for (let i = 365; i >= 0; i--) {
+      const d = new Date(now);
+      d.setDate(d.getDate() - i);
+      price = price * (1 + (Math.random() - 0.46) * 0.02);
+      price = Math.max(150, Math.min(240, price));
+      prices.push({ date: d.toISOString().split('T')[0], close: parseFloat(price.toFixed(2)) });
+    }
+    prices[prices.length - 1].close = 189.30;
+    return { historical: prices };
+  }
+
+  // ─── MAIN ANALYZE ─────────────────────────────────────
+  async function analyze() {
+    const ticker = document.getElementById('tickerInput').value.trim().toUpperCase();
+    if (!ticker) return;
+
+    if (!API_KEY && !DEMO_MODE) { showModal(); return; }
+
+    setLoading(true);
+    clearResults();
+    showError('');
+
+    try {
+      let data;
+      if (DEMO_MODE || API_KEY === 'demo') {
+        await sleep(900);
+        data = getDemoData();
+      } else {
+        setLoadingText('Fetching company profile...');
+        const [profile, ratios, income, cashflow, quote, insiders, historical] = await Promise.all([
+          fmpGet(`/v3/profile/${ticker}`),
+          fmpGet(`/v3/ratios/${ticker}?limit=1`),
+          fmpGet(`/v3/income-statement/${ticker}?limit=3`),
+          fmpGet(`/v3/cash-flow-statement/${ticker}?limit=1`),
+          fmpGet(`/v3/quote/${ticker}`),
+          fmpGet(`/v4/insider-trading?symbol=${ticker}&limit=20`),
+          fmpGet(`/v3/historical-price-full/${ticker}?timeseries=365`)
+        ]);
+        data = { profile, ratios, income, cashflow, quote, insiders, historical };
+      }
+
+      setLoadingText('Computing signals...');
+      await sleep(300);
+      renderDashboard(ticker, data);
+    } catch (err) {
+      showError(`Could not fetch data for "${ticker}". Check your API key and ticker symbol. (${err.message})`);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // ─── RENDER ───────────────────────────────────────────
+  function renderDashboard(ticker, data) {
+    const profile = data.profile?.[0] || {};
+    const ratio = data.ratios?.[0] || {};
+    const income = data.income || [];
+    const cf = data.cashflow?.[0] || {};
+    const quote = data.quote?.[0] || {};
+    const insiders = Array.isArray(data.insiders) ? data.insiders : (data.insiders?.data || []);
+    const hist = data.historical?.historical || [];
+
+    // ── Compute signals ──
+    const signals = computeSignals({ profile, ratio, income, cf, quote, insiders, hist });
+
+    // ── Company Card ──
+    document.getElementById('companyName').textContent = profile.companyName || ticker;
+    document.getElementById('companyTicker').textContent = `${ticker} · ${profile.currency || 'USD'}`;
+    document.getElementById('metaSector').textContent = profile.sector || '—';
+    document.getElementById('metaCap').textContent = formatMktCap(profile.mktCap || quote.marketCap);
+    document.getElementById('metaPrice').textContent = `$${(profile.price || quote.price || 0).toFixed(2)}`;
+    document.getElementById('metaRange').textContent = profile.range || `${quote.yearLow} – ${quote.yearHigh}`;
+    document.getElementById('metaExchange').textContent = profile.exchange || '—';
+
+    // Overall score
+    const totalScore = signals.reduce((s, sig) => s + sig.score, 0);
+    const maxScore = signals.reduce((s, sig) => s + sig.maxScore, 0);
+    const pct = Math.round((totalScore / maxScore) * 100);
+
+    document.getElementById('overallScore').textContent = pct;
+    document.getElementById('overallScore').style.color = pct >= 65 ? '#4caf7d' : pct >= 40 ? '#e09a3e' : '#e05c5c';
+
+    const vEl = document.getElementById('overallVerdict');
+    if (pct >= 70) { vEl.textContent = 'Strong Signal'; vEl.className = 'score-verdict verdict-strong'; }
+    else if (pct >= 55) { vEl.textContent = 'Moderate Signal'; vEl.className = 'score-verdict verdict-moderate'; }
+    else if (pct >= 40) { vEl.textContent = 'Weak Signal'; vEl.className = 'score-verdict verdict-weak'; }
+    else { vEl.textContent = 'Caution'; vEl.className = 'score-verdict verdict-caution'; }
+
+    document.getElementById('companyCard').style.display = 'block';
+
+    // ── Buffett signals ──
+    const buffettSignals = signals.filter(s => s.category === 'buffett');
+    renderSignalGrid('buffettGrid', buffettSignals);
+    document.getElementById('buffettSection').style.display = 'block';
+
+    // ── Simons signals ──
+    const simonsSignals = signals.filter(s => s.category === 'simons');
+    renderSignalGrid('simonsGrid', simonsSignals);
+    document.getElementById('simonsSection').style.display = 'block';
+
+    // ── Macro ──
+    renderMacro(quote, hist);
+    document.getElementById('macroSection').style.display = 'block';
+    document.getElementById('disclaimer').style.display = 'block';
+    document.getElementById('emptyState').style.display = 'none';
+
+    // Animate in
+    setTimeout(() => {
+      document.querySelectorAll('.signal-card, .macro-card').forEach((el, i) => {
+        setTimeout(() => el.classList.add('visible'), i * 60);
+      });
+    }, 50);
+  }
+
+  // ─── SIGNAL COMPUTATION ───────────────────────────────
+  function computeSignals({ profile, ratio, income, cf, quote, insiders, hist }) {
+    const signals = [];
+    const price = profile.price || quote.price || 0;
+
+    // ── 1. OWNER EARNINGS YIELD (Buffett) ──
+    const fcfPS = ratio.freeCashFlowPerShare || 0;
+    const fcfYield = price > 0 ? (fcfPS / price) * 100 : 0;
+    const fcfAnnual = cf.freeCashFlow || 0;
+    let fcfStatus = 'unknown', fcfScore = 5, fcfMax = 15;
+    if (fcfYield > 5) { fcfStatus = 'bullish'; fcfScore = 15; }
+    else if (fcfYield > 3) { fcfStatus = 'bullish'; fcfScore = 12; }
+    else if (fcfYield > 1.5) { fcfStatus = 'neutral'; fcfScore = 7; }
+    else if (fcfYield > 0) { fcfStatus = 'bearish'; fcfScore = 3; }
+    signals.push({
+      category: 'buffett',
+      name: 'Owner Earnings Yield',
+      value: fcfYield > 0 ? `${fcfYield.toFixed(1)}%` : '—',
+      status: fcfStatus,
+      score: fcfScore, maxScore: fcfMax,
+      context: `Free cash flow per share: $${fcfPS.toFixed(2)}. Annual FCF: ${formatMktCap(fcfAnnual)}.`,
+      action: fcfYield > 4
+        ? `<strong>Bullish:</strong> A ${fcfYield.toFixed(1)}% FCF yield is attractive. The business generates real cash relative to price — Buffett's preferred measure of value.`
+        : fcfYield > 2
+        ? `<strong>Fair:</strong> Moderate FCF yield. Not cheap, not expensive — watch for FCF growth trends to confirm quality.`
+        : `<strong>Bearish:</strong> Low FCF yield suggests limited earnings power relative to price. Requires high growth to justify valuation.`
+    });
+
+    // ── 2. RETURN ON EQUITY (Buffett) ──
+    const roe = (ratio.returnOnEquity || 0) * 100;
+    let roeStatus = 'unknown', roeScore = 5, roeMax = 15;
+    if (roe > 20) { roeStatus = 'bullish'; roeScore = 15; }
+    else if (roe > 12) { roeStatus = 'bullish'; roeScore = 10; }
+    else if (roe > 8) { roeStatus = 'neutral'; roeScore = 6; }
+    else if (roe > 0) { roeStatus = 'bearish'; roeScore = 2; }
+    else { roeStatus = 'bearish'; roeScore = 0; }
+    signals.push({
+      category: 'buffett',
+      name: 'Return on Equity',
+      value: roe !== 0 ? `${Math.abs(roe).toFixed(1)}%` : '—',
+      status: roeStatus,
+      score: roeScore, maxScore: roeMax,
+      context: `ROA: ${((ratio.returnOnAssets || 0) * 100).toFixed(1)}%. Net margin: ${((ratio.netProfitMargin || 0) * 100).toFixed(1)}%.`,
+      action: roe > 20
+        ? `<strong>Bullish:</strong> ${roe.toFixed(1)}% ROE indicates a durable competitive moat. Buffett looks for 15%+ sustained over a full cycle.`
+        : roe > 12
+        ? `<strong>Moderate:</strong> Solid ROE, but not exceptional. Verify it's consistent — not driven by debt leverage.`
+        : `<strong>Bearish:</strong> Low ROE suggests the business doesn't compound capital efficiently. Check if leverage is masking weakness.`
+    });
+
+    // ── 3. EARNINGS CONSISTENCY (Buffett) ──
+    let earningsStatus = 'unknown', earningsScore = 3, earningsMax = 10;
+    let earningsTrend = '—';
+    if (income.length >= 3) {
+      const eps = income.map(i => i.eps || i.netIncome / 1e9);
+      const growing = eps[0] >= eps[1] && eps[1] >= eps[2];
+      const stable = eps.every(e => e > 0);
+      earningsTrend = eps.slice(0, 3).map(e => `$${e.toFixed(2)}`).join(' → ');
+      if (growing && stable) { earningsStatus = 'bullish'; earningsScore = 10; }
+      else if (stable) { earningsStatus = 'neutral'; earningsScore = 6; }
+      else { earningsStatus = 'bearish'; earningsScore = 2; }
+    }
+    signals.push({
+      category: 'buffett',
+      name: 'Earnings Consistency (3Y)',
+      value: earningsTrend !== '—' ? earningsTrend.split(' → ')[0] : '—',
+      status: earningsStatus,
+      score: earningsScore, maxScore: earningsMax,
+      context: `EPS trend (most recent → oldest): ${earningsTrend}`,
+      action: earningsStatus === 'bullish'
+        ? `<strong>Bullish:</strong> Consistently growing EPS across 3 years. Predictable earnings are the bedrock of Buffett's framework.`
+        : earningsStatus === 'neutral'
+        ? `<strong>Mixed:</strong> Earnings are positive but not growing consistently. Dig into whether the stagnation is cyclical or structural.`
+        : `<strong>Bearish:</strong> Erratic or negative earnings. Without predictable cash generation, valuation becomes speculation.`
+    });
+
+    // ── 4. INSIDER BUYING (Buffett) ──
+    const recentInsiders = insiders.slice(0, 15);
+    const purchases = recentInsiders.filter(t => t.transactionType?.includes('P-Purchase') || t.transactionType?.includes('Buy'));
+    const sales = recentInsiders.filter(t => t.transactionType?.includes('S-Sale') || t.transactionType?.includes('Sell'));
+    const netBias = purchases.length - sales.length;
+    let insiderStatus, insiderScore, insiderMax = 15;
+    if (purchases.length > 0 && netBias >= 1) { insiderStatus = 'bullish'; insiderScore = 15; }
+    else if (purchases.length > 0) { insiderStatus = 'neutral'; insiderScore = 8; }
+    else if (sales.length > purchases.length * 2) { insiderStatus = 'bearish'; insiderScore = 3; }
+    else { insiderStatus = 'neutral'; insiderScore = 7; }
+    signals.push({
+      category: 'buffett',
+      name: 'Insider Buying Signal',
+      value: purchases.length > 0 ? `${purchases.length} buys` : sales.length > 0 ? `${sales.length} sales` : '—',
+      status: insiderStatus,
+      score: insiderScore, maxScore: insiderMax,
+      context: `Last 15 transactions: ${purchases.length} purchases, ${sales.length} sales. ${purchases[0] ? `Most recent buy: ${purchases[0].reportingName} (${purchases[0].transactionDate})` : ''}`,
+      action: insiderStatus === 'bullish'
+        ? `<strong>Bullish:</strong> Insider purchases are among the clearest signals. Insiders buy for one reason — they believe the stock is undervalued.`
+        : insiderStatus === 'bearish'
+        ? `<strong>Caution:</strong> Heavy insider selling isn't necessarily bearish (diversification, taxes), but combined with weak fundamentals, it warrants scrutiny.`
+        : `<strong>Neutral:</strong> Mixed or absent insider activity. Not a red flag, but not a positive catalyst either.`
+    });
+
+    // ── 5. VALUATION SPREAD / P/E (Simons) ──
+    const pe = ratio.priceEarningsRatio || quote.pe || 0;
+    const pb = ratio.priceToBookRatio || 0;
+    let valStatus, valScore, valMax = 15;
+    // Sector-agnostic: compare to rough market baseline (S&P ~20-22x)
+    if (pe > 0 && pe < 15) { valStatus = 'bullish'; valScore = 15; }
+    else if (pe > 0 && pe < 22) { valStatus = 'bullish'; valScore = 11; }
+    else if (pe > 0 && pe < 30) { valStatus = 'neutral'; valScore = 7; }
+    else if (pe > 30) { valStatus = 'bearish'; valScore = 3; }
+    else { valStatus = 'unknown'; valScore = 5; }
+    signals.push({
+      category: 'simons',
+      name: 'Valuation Spread (P/E · P/B)',
+      value: pe > 0 ? `${pe.toFixed(1)}x` : '—',
+      status: valStatus,
+      score: valScore, maxScore: valMax,
+      context: `P/E: ${pe > 0 ? pe.toFixed(1) + 'x' : '—'}. P/B: ${pb > 0 ? pb.toFixed(1) + 'x' : '—'}. P/FCF: ${ratio.priceToFreeCashFlowsRatio > 0 ? ratio.priceToFreeCashFlowsRatio.toFixed(1) + 'x' : '—'}.`,
+      action: pe > 0 && pe < 15
+        ? `<strong>Bullish:</strong> Trading at a significant discount to the market. Simons' models favor wide valuation spreads as a persistent alpha source.`
+        : pe > 0 && pe < 22
+        ? `<strong>Fair value:</strong> Trading near market average. Upside depends on earnings growth rate, not multiple expansion.`
+        : pe > 22
+        ? `<strong>Bearish:</strong> Premium valuation bakes in high expectations. Any earnings miss will compress the multiple quickly.`
+        : `<strong>Unavailable:</strong> Check P/FCF and P/B for additional valuation context.`
+    });
+
+    // ── 6. PRICE MOMENTUM (Simons) ──
+    let momStatus = 'unknown', momScore = 5, momMax = 15, momReturn = null;
+    if (hist.length >= 180) {
+      const latest = hist[0].close;
+      const sixMoAgo = hist[Math.min(130, hist.length - 1)].close;
+      const twelveAgo = hist[Math.min(260, hist.length - 1)].close;
+      const mom6 = ((latest - sixMoAgo) / sixMoAgo) * 100;
+      const mom12 = ((latest - twelveAgo) / twelveAgo) * 100;
+      momReturn = mom6;
+      if (mom6 > 10 && mom12 > 15) { momStatus = 'bullish'; momScore = 15; }
+      else if (mom6 > 5 || mom12 > 10) { momStatus = 'bullish'; momScore = 11; }
+      else if (mom6 > -5) { momStatus = 'neutral'; momScore = 7; }
+      else { momStatus = 'bearish'; momScore = 3; }
+    }
+    signals.push({
+      category: 'simons',
+      name: '6–12 Month Price Momentum',
+      value: momReturn !== null ? `${momReturn >= 0 ? '+' : ''}${momReturn.toFixed(1)}%` : '—',
+      status: momStatus,
+      score: momScore, maxScore: momMax,
+      context: `6-month return used as primary signal. Simons found 3–12 month momentum is one of the most robust anomalies in price data.`,
+      action: momStatus === 'bullish'
+        ? `<strong>Bullish:</strong> Strong positive momentum. Historically, stocks with positive 6–12 month momentum continue to outperform on average for another 3–6 months.`
+        : momStatus === 'neutral'
+        ? `<strong>Neutral:</strong> No clear directional trend. Momentum is absent — watch for a catalyst to establish direction.`
+        : `<strong>Bearish:</strong> Negative momentum. Trend-following models would avoid this stock. Wait for a reversal signal before entering.`
+    });
+
+    // ── 7. VOLATILITY REGIME (Simons) ──
+    let volStatus = 'unknown', volScore = 5, volMax = 10, realizedVol = null;
+    if (hist.length >= 60) {
+      const recent = hist.slice(0, 60).map(d => d.close);
+      const returns = recent.slice(0, -1).map((p, i) => Math.log(p / recent[i + 1]));
+      const mean = returns.reduce((a, b) => a + b, 0) / returns.length;
+      const variance = returns.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / returns.length;
+      realizedVol = Math.sqrt(variance * 252) * 100;
+      if (realizedVol < 20) { volStatus = 'bullish'; volScore = 10; }
+      else if (realizedVol < 30) { volStatus = 'neutral'; volScore = 6; }
+      else if (realizedVol < 45) { volStatus = 'neutral'; volScore = 4; }
+      else { volStatus = 'bearish'; volScore = 1; }
+    }
+    signals.push({
+      category: 'simons',
+      name: 'Realized Volatility Regime',
+      value: realizedVol !== null ? `${realizedVol.toFixed(0)}% ann.` : '—',
+      status: volStatus,
+      score: volScore, maxScore: volMax,
+      context: `Annualized 60-day realized vol. S&P 500 average is ~15–18%. Elevated vol signals regime stress or uncertainty.`,
+      action: realizedVol !== null && realizedVol < 22
+        ? `<strong>Calm regime:</strong> Low volatility environment — consistent with institutional accumulation and low uncertainty. Favorable entry conditions.`
+        : realizedVol !== null && realizedVol < 35
+        ? `<strong>Normal regime:</strong> Volatility is within normal bounds. Not a warning sign, but not optimal calm either.`
+        : `<strong>High vol regime:</strong> Elevated realized volatility signals stress. Simons' models treat this as a regime change signal — reduce position sizing.`
+    });
+
+    return signals;
+  }
+
+  // ─── MACRO RENDER ─────────────────────────────────────
+  function renderMacro(quote, hist) {
+    const macroGrid = document.getElementById('macroGrid');
+    macroGrid.innerHTML = '';
+
+    const items = [];
+
+    // Volume trend
+    if (quote.volume && quote.avgVolume) {
+      const volRatio = ((quote.volume / quote.avgVolume) - 1) * 100;
+      items.push({
+        label: 'Volume vs Avg',
+        value: `${volRatio >= 0 ? '+' : ''}${volRatio.toFixed(0)}%`,
+        color: Math.abs(volRatio) > 50 ? (volRatio > 0 ? '#4caf7d' : '#e05c5c') : '#888880',
+        note: volRatio > 50 ? 'Above-average volume — watch for institutional activity' : volRatio < -30 ? 'Thin volume — low conviction moves' : 'Volume near average'
+      });
+    }
+
+    // 52-week position
+    if (quote.yearHigh && quote.yearLow && quote.price) {
+      const rangePct = ((quote.price - quote.yearLow) / (quote.yearHigh - quote.yearLow)) * 100;
+      items.push({
+        label: '52-Week Position',
+        value: `${rangePct.toFixed(0)}%`,
+        color: rangePct > 70 ? '#4caf7d' : rangePct > 30 ? '#c9a84c' : '#e05c5c',
+        note: rangePct > 80 ? 'Near 52-week high — momentum favors bulls' : rangePct < 20 ? 'Near 52-week low — value opportunity or falling knife' : 'Mid-range — no directional bias from range'
+      });
+    }
+
+    // EPS
+    if (quote.eps) {
+      items.push({
+        label: 'Trailing EPS',
+        value: `$${quote.eps.toFixed(2)}`,
+        color: quote.eps > 0 ? '#4caf7d' : '#e05c5c',
+        note: quote.eps > 0 ? 'Profitable on a trailing basis' : 'Loss-making on trailing 12 months — high risk'
+      });
+    }
+
+    // PE
+    if (quote.pe) {
+      items.push({
+        label: 'Trailing P/E',
+        value: `${quote.pe.toFixed(1)}x`,
+        color: quote.pe < 20 ? '#4caf7d' : quote.pe < 30 ? '#c9a84c' : '#e05c5c',
+        note: `Market baseline ~21x. ${quote.pe < 15 ? 'Cheap by historical standards.' : quote.pe > 35 ? 'Priced for perfection.' : 'Near market average.'}`
+      });
+    }
+
+    // Hist drawdown
+    if (hist.length > 30) {
+      const peak = Math.max(...hist.slice(0, 60).map(d => d.close));
+      const curr = hist[0].close;
+      const dd = ((curr - peak) / peak) * 100;
+      items.push({
+        label: '60-Day Drawdown',
+        value: `${dd.toFixed(1)}%`,
+        color: dd > -5 ? '#4caf7d' : dd > -15 ? '#c9a84c' : '#e05c5c',
+        note: dd < -20 ? 'Significant drawdown — stress in price action' : dd < -10 ? 'Moderate pullback from recent peak' : 'Near recent highs — healthy price action'
+      });
+    }
+
+    // Gross margin
+    const grossMargin = 0; // Would come from ratio in a full implementation
+
+    items.push({
+      label: 'Data Source',
+      value: DEMO_MODE ? 'DEMO' : 'FMP API',
+      color: '#888880',
+      note: DEMO_MODE ? 'Using sample data (Apple Inc.) for demonstration' : 'Live data via Financial Modeling Prep'
+    });
+
+    items.forEach(item => {
+      const el = document.createElement('div');
+      el.className = 'macro-card';
+      el.innerHTML = `
+        <div class="macro-label">${item.label}</div>
+        <div class="macro-value" style="color:${item.color}">${item.value}</div>
+        <div class="macro-note">${item.note}</div>
+      `;
+      macroGrid.appendChild(el);
+    });
+  }
+
+  // ─── SIGNAL CARD RENDERER ─────────────────────────────
+  function renderSignalGrid(gridId, signals) {
+    const grid = document.getElementById(gridId);
+    grid.innerHTML = '';
+    signals.forEach(sig => {
+      const barPct = Math.round((sig.score / sig.maxScore) * 100);
+      const barColor = barPct >= 70 ? 'fill-green' : barPct >= 45 ? 'fill-amber' : 'fill-red';
+      const el = document.createElement('div');
+      el.className = `signal-card status-${sig.status}`;
+      el.innerHTML = `
+        <div class="signal-status-bar"></div>
+        <div class="signal-header">
+          <div class="signal-name">${sig.name}</div>
+          <div class="signal-badge badge-${sig.status}">${sig.status}</div>
+        </div>
+        <div class="signal-value">${sig.value}</div>
+        <div class="signal-context">${sig.context}</div>
+        <div class="score-bar-wrap">
+          <div style="font-family:'JetBrains Mono',monospace;font-size:0.6rem;color:var(--text-faint);letter-spacing:0.1em;">SIGNAL STRENGTH ${sig.score}/${sig.maxScore}</div>
+          <div class="score-bar-track"><div class="score-bar-fill ${barColor}" style="width:${barPct}%"></div></div>
+        </div>
+        <div class="signal-action">${sig.action}</div>
+      `;
+      grid.appendChild(el);
+    });
+  }
+
+  // ─── UTILS ────────────────────────────────────────────
+  function clearResults() {
+    document.getElementById('companyCard').style.display = 'none';
+    document.getElementById('buffettSection').style.display = 'none';
+    document.getElementById('simonsSection').style.display = 'none';
+    document.getElementById('macroSection').style.display = 'none';
+    document.getElementById('disclaimer').style.display = 'none';
+    document.getElementById('buffettGrid').innerHTML = '';
+    document.getElementById('simonsGrid').innerHTML = '';
+    document.getElementById('macroGrid').innerHTML = '';
+  }
+
+  function setLoading(on) {
+    document.getElementById('loadingOverlay').style.display = on ? 'flex' : 'none';
+    document.getElementById('emptyState').style.display = on ? 'none' : (document.getElementById('companyCard').style.display === 'none' ? 'block' : 'none');
+    document.getElementById('analyzeBtn').disabled = on;
+  }
+
+  function setLoadingText(t) {
+    document.getElementById('loadingText').textContent = t;
+  }
+
+  function showError(msg) {
+    const el = document.getElementById('errorMsg');
+    el.textContent = msg;
+    el.style.display = msg ? 'block' : 'none';
+    if (msg) document.getElementById('emptyState').style.display = 'none';
+  }
+
+  function formatMktCap(v) {
+    if (!v) return '—';
+    if (v >= 1e12) return `$${(v / 1e12).toFixed(2)}T`;
+    if (v >= 1e9) return `$${(v / 1e9).toFixed(1)}B`;
+    if (v >= 1e6) return `$${(v / 1e6).toFixed(0)}M`;
+    return `$${v.toLocaleString()}`;
+  }
+
+  function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+  // ═══════════════════════════════════════════════════════
+  //  TOP PERFORMERS BAR + LEADERBOARD
+  // ═══════════════════════════════════════════════════════
+
+  const LB_KEY = 'signal-leaderboard-v1';
+  const LB_LOG_KEY = 'signal-lb-dailylog-v1';
+
+  async function initTopBar() {
+    const today = todayStr();
+    document.getElementById('topBarDate').textContent = ' · ' + formatDateShort(today);
+    await loadTopMovers();
+  }
+
+  async function loadTopMovers() {
+    const scroll = document.getElementById('topBarScroll');
+    scroll.innerHTML = `<div class="topbar-loading"><div class="mini-spinner"></div> FETCHING MOVERS...</div>`;
+    try {
+      let movers;
+      if (DEMO_MODE || API_KEY === 'demo') {
+        await sleep(600);
+        movers = getDemoMovers();
+      } else if (!API_KEY) {
+        scroll.innerHTML = `<div class="topbar-loading" style="color:var(--text-faint)">Enter API key to see today\'s top movers</div>`;
+        return;
+      } else {
+        const data = await fmpGet('/v3/stock_market/gainers');
+        movers = (Array.isArray(data) ? data : []).slice(0, 5).map(s => ({
+          symbol: s.symbol,
+          name: s.name || s.companyName || s.symbol,
+          change: s.changesPercentage || s.changePercent || 0,
+          price: s.price || 0
+        }));
+        if (!movers.length) throw new Error('No data');
+      }
+      renderTopBar(movers);
+      await recordTodaysMovers(movers);
+      renderLeaderboard();
+    } catch (e) {
+      scroll.innerHTML = `<div class="topbar-loading" style="color:var(--text-faint)">Could not load movers — check API key or try again</div>`;
+    }
+  }
+
+  function getDemoMovers() {
+    return [
+      { symbol: 'NVDA', name: 'NVIDIA Corporation',     change: 6.42, price: 876.50 },
+      { symbol: 'META', name: 'Meta Platforms',          change: 4.18, price: 513.20 },
+      { symbol: 'AMD',  name: 'Advanced Micro Devices',  change: 3.95, price: 178.40 },
+      { symbol: 'TSLA', name: 'Tesla Inc.',              change: 3.61, price: 244.80 },
+      { symbol: 'MSFT', name: 'Microsoft Corp.',         change: 2.87, price: 415.60 },
+    ];
+  }
+
+  function renderTopBar(movers) {
+    const scroll = document.getElementById('topBarScroll');
+    const lb = loadLeaderboard();
+    scroll.innerHTML = '';
+    movers.forEach((m, i) => {
+      const count = lb[m.symbol] ? lb[m.symbol].count : 0;
+      const hot = count >= 10;
+      const card = document.createElement('div');
+      card.className = `top-ticker-card rank-${i + 1}`;
+      card.title = `Click to analyze ${m.symbol}`;
+      card.onclick = () => quickAnalyze(m.symbol);
+      card.innerHTML = `
+        <div class="tc-rank">${i + 1}</div>
+        <div class="tc-info">
+          <div class="tc-ticker">${m.symbol}</div>
+          <div class="tc-name">${m.name}</div>
+        </div>
+        <div class="tc-right">
+          <div class="tc-change pos">+${parseFloat(m.change).toFixed(2)}%</div>
+          <div class="tc-streak ${hot ? 'hot' : ''}">${count > 0 ? '★ ' + count + '×' : '1st time'}</div>
+        </div>
+      `;
+      scroll.appendChild(card);
+    });
+  }
+
+  async function recordTodaysMovers(movers) {
+    const today = todayStr();
+    let log = {};
+    try { log = JSON.parse(localStorage.getItem(LB_LOG_KEY) || '{}'); } catch(e) {}
+    if (log[today]) return;
+    let lb = loadLeaderboard();
+    movers.forEach(m => {
+      if (!lb[m.symbol]) lb[m.symbol] = { symbol: m.symbol, name: m.name, count: 0, lastSeen: null, history: [] };
+      lb[m.symbol].name = m.name;
+      lb[m.symbol].lastSeen = today;
+      if (!lb[m.symbol].history) lb[m.symbol].history = [];
+      lb[m.symbol].history.push(today);
+      const cutoff = daysAgo(365);
+      lb[m.symbol].history = lb[m.symbol].history.filter(d => d >= cutoff);
+      lb[m.symbol].count = lb[m.symbol].history.length;
+    });
+    Object.keys(lb).forEach(k => { if (lb[k].count === 0) delete lb[k]; });
+    saveLeaderboard(lb);
+    log[today] = true;
+    const cutoffDate = daysAgo(400);
+    Object.keys(log).forEach(d => { if (d < cutoffDate) delete log[d]; });
+    localStorage.setItem(LB_LOG_KEY, JSON.stringify(log));
+  }
+
+  function renderLeaderboard() {
+    const lb = loadLeaderboard();
+    const entries = Object.values(lb).sort((a, b) => b.count - a.count).slice(0, 20);
+    const maxCount = entries.length > 0 ? entries[0].count : 1;
+    const table = document.getElementById('lbTable');
+    table.querySelectorAll('.lb-row').forEach(el => el.remove());
+    table.querySelectorAll('.lb-empty').forEach(el => el.remove());
+    if (!entries.length) {
+      const empty = document.createElement('div');
+      empty.className = 'lb-empty';
+      empty.style.cssText = 'grid-column:1/-1;padding:20px 0;color:var(--text-faint);font-size:0.8rem;font-family:JetBrains Mono,monospace;';
+      empty.textContent = 'No data yet — leaderboard builds as you use the app each day.';
+      table.appendChild(empty);
+      return;
+    }
+    entries.forEach((entry, i) => {
+      const pct = Math.round((entry.count / maxCount) * 100);
+      const row = document.createElement('div');
+      row.className = 'lb-row';
+      row.onclick = () => { quickAnalyze(entry.symbol); toggleLeaderboard(false); };
+      row.innerHTML = `
+        <div><span class="lb-row-rank ${i < 3 ? 'top3' : ''}">${i + 1}</span></div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:0.8rem;letter-spacing:0.1em;font-weight:600;">${entry.symbol}</div>
+        <div style="font-size:0.78rem;color:var(--text-dim);padding-right:12px;">${entry.name || '—'}</div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:0.85rem;color:var(--gold);">${entry.count} <span style="font-size:0.65rem;color:var(--text-faint);">days</span></div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:0.72rem;color:var(--text-dim);">${entry.lastSeen ? formatDateShort(entry.lastSeen) : '—'}</div>
+        <div class="lb-bar-wrap"><div class="lb-bar" style="width:${pct}%"></div></div>
+      `;
+      table.appendChild(row);
+    });
+  }
+
+  let lbOpen = false;
+  function toggleLeaderboard(forceState) {
+    lbOpen = forceState !== undefined ? forceState : !lbOpen;
+    const panel = document.getElementById('leaderboardPanel');
+    const btn = document.querySelector('.lb-btn');
+    panel.style.display = lbOpen ? 'block' : 'none';
+    btn.textContent = lbOpen ? '365-DAY BOARD ↑' : '365-DAY BOARD ↓';
+    if (lbOpen) renderLeaderboard();
+  }
+
+  function clearLeaderboard() {
+    if (!confirm('Clear all 365-day leaderboard data?')) return;
+    localStorage.removeItem(LB_KEY);
+    localStorage.removeItem(LB_LOG_KEY);
+    renderLeaderboard();
+    loadTopMovers();
+  }
+
+  function loadLeaderboard() {
+    try { return JSON.parse(localStorage.getItem(LB_KEY) || '{}'); }
+    catch(e) { return {}; }
+  }
+
+  function saveLeaderboard(lb) {
+    localStorage.setItem(LB_KEY, JSON.stringify(lb));
+  }
+
+  function todayStr() {
+    return new Date().toISOString().split('T')[0];
+  }
+
+  function daysAgo(n) {
+    const d = new Date();
+    d.setDate(d.getDate() - n);
+    return d.toISOString().split('T')[0];
+  }
+
+  function formatDateShort(str) {
+    if (!str) return '—';
+    const d = new Date(str + 'T00:00:00');
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  }
+
+</script>
+</body>
+</html>
