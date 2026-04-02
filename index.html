@@ -1015,17 +1015,18 @@
 <!-- API Key Modal -->
 <div class="modal-backdrop" id="modalBackdrop">
   <div class="modal">
-    <div class="modal-title">Connect your data</div>
+    <div class="modal-title">Ready to go</div>
     <p class="modal-sub">
-      This dashboard uses <a href="https://financialmodelingprep.com/developer/docs/" target="_blank">Financial Modeling Prep</a> for fundamental data (free tier available — 250 calls/day). Get a free API key in under a minute, or use demo mode with sample data.
+      Data comes from <strong style="color:var(--text)">Yahoo Finance</strong> — no API key needed. Just hit Start and search any ticker.<br><br>
+      <span style="color:var(--text-faint)">Optional:</span> Add a <a href="https://financialmodelingprep.com/developer/docs/" target="_blank">Financial Modeling Prep</a> key to enhance ratio data (free tier, 250 calls/day).
     </p>
     <div class="input-group">
-      <label>FMP API Key</label>
-      <input type="text" id="apiKeyInput" placeholder="Enter your FMP API key..." autocomplete="off">
+      <label>FMP API Key (optional)</label>
+      <input type="text" id="apiKeyInput" placeholder="Leave blank to use Yahoo Finance only..." autocomplete="off">
     </div>
     <div class="modal-actions">
-      <button class="btn-primary" onclick="saveApiKey()">Connect →</button>
-      <button class="btn-demo" onclick="useDemoMode()">Use Demo Data</button>
+      <button class="btn-primary" onclick="saveApiKey()">Start →</button>
+      <button class="btn-demo" onclick="useDemoMode()">Demo Data</button>
     </div>
   </div>
 </div>
@@ -1041,7 +1042,7 @@
       <input type="text" id="tickerInput" placeholder="AAPL" maxlength="8">
       <button id="analyzeBtn" onclick="analyze()">Analyze</button>
     </div>
-    <button class="settings-btn" onclick="showModal()" title="API Settings">⚙</button>
+    <button class="settings-btn" onclick="showModal()" title="Settings — FMP key optional">⚙</button>
   </div>
 </header>
 
@@ -1134,11 +1135,16 @@
   // ─── STATE ───────────────────────────────────────────
   let API_KEY = localStorage.getItem('fmp_key') || '';
   let DEMO_MODE = false;
-  const BASE = 'https://financialmodelingprep.com/api';
+  const FMP_BASE = 'https://financialmodelingprep.com/api';
+  // Yahoo Finance proxy - no API key needed, real CORS support
+  const YF_PROXY = 'https://query1.finance.yahoo.com';
+  const YF_PROXY2 = 'https://query2.finance.yahoo.com';
 
   // ─── INIT ─────────────────────────────────────────────
   window.onload = () => {
-    if (API_KEY) document.getElementById('modalBackdrop').style.display = 'none';
+    // Yahoo Finance needs no key — skip modal by default
+    document.getElementById('modalBackdrop').style.display = 'none';
+    if (!API_KEY) API_KEY = 'yahoo-only';
     document.getElementById('tickerInput').addEventListener('keydown', e => {
       if (e.key === 'Enter') analyze();
     });
@@ -1152,10 +1158,10 @@
 
   function saveApiKey() {
     const key = document.getElementById('apiKeyInput').value.trim();
-    if (!key) return;
-    API_KEY = key;
+    API_KEY = key || 'yahoo-only';
     DEMO_MODE = false;
-    localStorage.setItem('fmp_key', key);
+    if (key) localStorage.setItem('fmp_key', key);
+    else localStorage.removeItem('fmp_key');
     document.getElementById('modalBackdrop').style.display = 'none';
   }
 
@@ -1173,52 +1179,137 @@
   }
 
   // ─── FETCH HELPERS ────────────────────────────────────
-  // FMP free tier has CORS restrictions on some endpoints.
-  // We try direct first, then fall back to a public CORS proxy.
-  const CORS_PROXY = 'https://corsproxy.io/?url=';
+  // Primary source: Yahoo Finance (no API key, real CORS support)
+  // Optional enhancement: FMP for deeper fundamentals if key is provided
 
-  async function fmpGet(path, allowFail = false) {
-    const sep = path.includes('?') ? '&' : '?';
-    const directUrl = `${BASE}${path}${sep}apikey=${API_KEY}`;
+  async function yhooGet(path, host) {
+    const base = host || YF_PROXY;
+    const url = base + path;
     try {
-      const r = await fetch(directUrl, { mode: 'cors' });
-      if (r.status === 403 || r.status === 401) {
-        return await fmpGetViaProxy(directUrl, allowFail);
+      const r = await fetch(url, { headers: { 'Accept': 'application/json' } });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return await r.json();
+    } catch(e) {
+      // Try second Yahoo host
+      if (host !== YF_PROXY2) {
+        const r2 = await fetch(YF_PROXY2 + path, { headers: { 'Accept': 'application/json' } });
+        if (!r2.ok) throw new Error('HTTP ' + r2.status);
+        return await r2.json();
       }
-      if (!r.ok) {
-        if (allowFail) return null;
-        throw new Error('HTTP ' + r.status);
-      }
-      const data = await r.json();
-      if (data && data['Error Message']) {
-        if (allowFail) return null;
-        throw new Error(data['Error Message']);
-      }
-      return data;
-    } catch (err) {
-      if (err.message && (err.message.startsWith('HTTP ') || err.message.includes('Error Message'))) throw err;
-      return await fmpGetViaProxy(directUrl, allowFail);
+      throw e;
     }
   }
 
-  async function fmpGetViaProxy(originalUrl, allowFail) {
+  async function fmpGet(path, allowFail = false) {
+    if (!API_KEY || API_KEY === 'demo') return allowFail ? null : null;
+    const sep = path.includes('?') ? '&' : '?';
+    const url = FMP_BASE + path + sep + 'apikey=' + API_KEY;
     try {
-      const proxyUrl = 'https://corsproxy.io/?url=' + encodeURIComponent(originalUrl);
-      const r = await fetch(proxyUrl);
-      if (!r.ok) {
-        if (allowFail) return null;
-        throw new Error('HTTP ' + r.status + ' (via proxy)');
-      }
-      const data = await r.json();
-      if (data && data['Error Message']) {
-        if (allowFail) return null;
-        throw new Error(data['Error Message']);
-      }
-      return data;
-    } catch (err) {
+      const r = await fetch(url, { mode: 'cors' });
+      if (!r.ok) { if (allowFail) return null; throw new Error('FMP HTTP ' + r.status); }
+      const d = await r.json();
+      if (d && d['Error Message']) { if (allowFail) return null; throw new Error(d['Error Message']); }
+      return d;
+    } catch(e) {
       if (allowFail) return null;
-      throw err;
+      throw e;
     }
+  }
+
+  // Parse Yahoo Finance quoteSummary into our data shape
+  function parseYahooData(ticker, summary, history) {
+    const p   = summary.price            || {};
+    const ks  = summary.defaultKeyStatistics || {};
+    const fin = summary.financialData    || {};
+    const inc = summary.incomeStatementHistory?.incomeStatementHistory || [];
+    const cfs = summary.cashflowStatementHistory?.cashflowStatements   || [];
+    const ins = summary.insiderTransactions?.transactions               || [];
+    const cal = summary.calendarEvents   || {};
+    const as  = summary.assetProfile     || {};
+
+    // profile shape
+    const profile = [{
+      companyName: p.longName || p.shortName || ticker,
+      symbol:      ticker,
+      sector:      as.sector   || '—',
+      industry:    as.industry || '—',
+      price:       p.regularMarketPrice?.raw || 0,
+      mktCap:      p.marketCap?.raw || 0,
+      exchange:    p.exchangeName || p.exchange || '—',
+      range:       (p.fiftyTwoWeekLow?.fmt || '—') + ' - ' + (p.fiftyTwoWeekHigh?.fmt || '—'),
+      currency:    p.currency || 'USD',
+    }];
+
+    // quote shape
+    const quote = [{
+      price:      p.regularMarketPrice?.raw  || 0,
+      yearHigh:   p.fiftyTwoWeekHigh?.raw    || 0,
+      yearLow:    p.fiftyTwoWeekLow?.raw     || 0,
+      volume:     p.regularMarketVolume?.raw || 0,
+      avgVolume:  p.averageDailyVolume3Month?.raw || p.averageDailyVolume10Day?.raw || 0,
+      pe:         p.trailingPE?.raw          || ks.trailingEps?.raw ? (p.regularMarketPrice?.raw / ks.trailingEps?.raw) : 0,
+      eps:        ks.trailingEps?.raw        || fin.revenuePerShare?.raw || 0,
+      marketCap:  p.marketCap?.raw           || 0,
+    }];
+
+    // ratios shape
+    const roe  = fin.returnOnEquity?.raw || 0;
+    const roa  = fin.returnOnAssets?.raw || 0;
+    const fcf  = fin.freeCashflow?.raw   || 0;
+    const mktC = p.marketCap?.raw        || 1;
+    const fcfYield = fcf / mktC;
+    const fcfPS    = fcf / (ks.sharesOutstanding?.raw || 1);
+    const ratios = [{
+      returnOnEquity:              roe,
+      returnOnAssets:              roa,
+      freeCashFlowPerShare:        fcfPS,
+      priceToFreeCashFlowsRatio:   fcf > 0 ? (profile[0].price / fcfPS) : 0,
+      priceEarningsRatio:          p.trailingPE?.raw || (ks.trailingEps?.raw > 0 ? profile[0].price / ks.trailingEps.raw : 0),
+      priceToBookRatio:            ks.priceToBook?.raw || 0,
+      netProfitMargin:             fin.profitMargins?.raw || 0,
+      grossProfitMargin:           fin.grossMargins?.raw  || 0,
+      debtEquityRatio:             fin.debtToEquity?.raw  || 0,
+      dividendYield:               ks.dividendYield?.raw  || 0,
+    }];
+
+    // income shape (last 3 years)
+    const income = inc.slice(0,3).map(s => ({
+      revenue:    s.totalRevenue?.raw    || 0,
+      netIncome:  s.netIncome?.raw       || 0,
+      eps:        s.basicEPS?.raw        || (s.netIncome?.raw / (ks.sharesOutstanding?.raw || 1)),
+      period:     s.endDate?.fmt         || '—',
+    }));
+
+    // cashflow shape
+    const cashflow = cfs.slice(0,1).map(s => ({
+      freeCashFlow:         (s.totalCashFromOperatingActivities?.raw || 0) + (s.capitalExpenditures?.raw || 0),
+      capitalExpenditure:   s.capitalExpenditures?.raw || 0,
+    }));
+    if (!cashflow.length && fin.freeCashflow?.raw) {
+      cashflow.push({ freeCashFlow: fin.freeCashflow.raw, capitalExpenditure: 0 });
+    }
+
+    // insiders shape
+    const insiders = ins.slice(0,15).map(t => ({
+      transactionType: t.transactionDescription || (t.shares?.raw > 0 ? 'P-Purchase' : 'S-Sale'),
+      reportingName:   t.filerName || '—',
+      transactionDate: t.startDate?.fmt || '—',
+      securitiesTransacted: Math.abs(t.shares?.raw || 0),
+      price:           t.value?.raw && t.shares?.raw ? Math.abs(t.value.raw / t.shares.raw) : 0,
+    }));
+
+    // historical price shape
+    const histPrices = (history?.prices || [])
+      .filter(d => d.close)
+      .map(d => ({
+        date:  new Date(d.date * 1000).toISOString().split('T')[0],
+        close: d.close,
+      }))
+      .sort((a,b) => b.date.localeCompare(a.date));
+
+    const historical = { historical: histPrices };
+
+    return { profile, quote, ratios, income, cashflow, insiders, historical };
   }
 
   // ─── DEMO DATA ────────────────────────────────────────
@@ -1272,7 +1363,7 @@
     const ticker = document.getElementById('tickerInput').value.trim().toUpperCase();
     if (!ticker) return;
 
-    if (!API_KEY && !DEMO_MODE) { showModal(); return; }
+    if (!API_KEY) { API_KEY = 'yahoo-only'; }
 
     setLoading(true);
     clearResults();
@@ -1284,36 +1375,50 @@
         await sleep(900);
         data = getDemoData();
       } else {
-        // Fetch core data first (required), then optional endpoints gracefully
-        setLoadingText('Fetching quote & profile...');
-        const [profile, quote] = await Promise.all([
-          fmpGet(`/v3/profile/${ticker}`),
-          fmpGet(`/v3/quote/${ticker}`)
-        ]);
-        if (!profile || !profile[0]) throw new Error('Ticker not found. Check the symbol and try again.');
+        // ── Yahoo Finance (primary, no API key needed) ──
+        setLoadingText('Fetching fundamentals from Yahoo Finance...');
+        const modules = [
+          'price', 'defaultKeyStatistics', 'financialData',
+          'incomeStatementHistory', 'cashflowStatementHistory',
+          'insiderTransactions', 'assetProfile'
+        ].join(',');
 
-        setLoadingText('Fetching financials...');
-        const [ratios, income, cashflow] = await Promise.all([
-          fmpGet(`/v3/ratios/${ticker}?limit=1`, true),
-          fmpGet(`/v3/income-statement/${ticker}?limit=3`, true),
-          fmpGet(`/v3/cash-flow-statement/${ticker}?limit=1`, true)
-        ]);
+        const summaryResp = await yhooGet(
+          `/v10/finance/quoteSummary/${encodeURIComponent(ticker)}?modules=${modules}&corsDomain=finance.yahoo.com&formatted=true`
+        );
 
-        setLoadingText('Fetching price history & insider data...');
-        const [historical, insiders] = await Promise.all([
-          fmpGet(`/v3/historical-price-full/${ticker}?timeseries=365`, true),
-          fmpGet(`/v4/insider-trading?symbol=${ticker}&limit=20`, true)
-        ]);
+        const result = summaryResp?.quoteSummary?.result;
+        if (!result || !result[0]) {
+          const errMsg = summaryResp?.quoteSummary?.error?.description || 'Ticker not found';
+          throw new Error(errMsg);
+        }
+        const summary = result[0];
 
-        data = {
-          profile,
-          ratios: ratios || [],
-          income: income || [],
-          cashflow: cashflow || [],
-          quote,
-          insiders: insiders || [],
-          historical: historical || {}
-        };
+        setLoadingText('Fetching price history...');
+        let historyData = null;
+        try {
+          const histResp = await yhooGet(
+            `/v8/finance/chart/${encodeURIComponent(ticker)}?range=1y&interval=1d&includePrePost=false`
+          );
+          const timestamps = histResp?.chart?.result?.[0]?.timestamp || [];
+          const closes     = histResp?.chart?.result?.[0]?.indicators?.quote?.[0]?.close || [];
+          historyData = {
+            prices: timestamps.map((t, i) => ({ date: t, close: closes[i] })).filter(d => d.close != null)
+          };
+        } catch(e) { /* price history optional */ }
+
+        data = parseYahooData(ticker, summary, historyData);
+
+        // ── FMP enhancement (optional, if key provided) ──
+        if (API_KEY && API_KEY !== 'demo') {
+          setLoadingText('Enhancing with FMP fundamentals...');
+          const [fmpRatios, fmpIncome] = await Promise.all([
+            fmpGet(`/v3/ratios/${ticker}?limit=1`, true),
+            fmpGet(`/v3/income-statement/${ticker}?limit=3`, true),
+          ]);
+          if (fmpRatios?.[0]) data.ratios = fmpRatios;
+          if (fmpIncome?.length) data.income = fmpIncome;
+        }
       }
 
       setLoadingText('Computing signals...');
@@ -1322,16 +1427,16 @@
     } catch (err) {
       const msg = err.message || '';
       let hint = '';
-      if (msg.includes('403') || msg.includes('401')) {
-        hint = 'Your API key was rejected (403). Double-check it at financialmodelingprep.com — free keys sometimes need email verification first.';
-      } else if (msg.includes('not found') || msg.includes('Invalid')) {
-        hint = 'Ticker not recognised. Try a US-listed symbol like AAPL, MSFT, or NVDA.';
-      } else if (msg.includes('Failed to fetch') || msg.includes('NetworkError') || msg.includes('proxy')) {
-        hint = 'Network error — the request was blocked. Try opening the file from a local server or use Demo Mode to test the interface.';
+      if (msg.toLowerCase().includes('not found') || msg.includes('No fundamentals') || msg.includes('Invalid ticker')) {
+        hint = `"${ticker}" wasn't found. Check the symbol — use the US-listed ticker (e.g. AAPL, MSFT, BRK-B).`;
+      } else if (msg.includes('Failed to fetch') || msg.includes('NetworkError') || msg.includes('Load failed')) {
+        hint = 'Network blocked. Yahoo Finance requires an internet connection. Make sure you are online and try again.';
+      } else if (msg.includes('404')) {
+        hint = `Ticker "${ticker}" not found on Yahoo Finance. Try the exact US exchange symbol.`;
       } else {
-        hint = 'Verify your FMP API key is correct and the ticker is a valid US-listed symbol.';
+        hint = `Could not load data for ${ticker}. ${msg}`;
       }
-      showError(`⚠ ${hint} (${msg})`);
+      showError('⚠ ' + hint);
     } finally {
       setLoading(false);
     }
@@ -1650,9 +1755,9 @@
 
     items.push({
       label: 'Data Source',
-      value: DEMO_MODE ? 'DEMO' : 'FMP API',
+      value: DEMO_MODE ? 'DEMO' : (API_KEY && API_KEY !== 'yahoo-only' ? 'YF + FMP' : 'YAHOO FIN'),
       color: '#888880',
-      note: DEMO_MODE ? 'Using sample data (Apple Inc.) for demonstration' : 'Live data via Financial Modeling Prep'
+      note: DEMO_MODE ? 'Using sample data (Apple Inc.) for demonstration' : 'Live data via Yahoo Finance' + (API_KEY && API_KEY !== 'yahoo-only' ? ' + FMP' : '')
     });
 
     items.forEach(item => {
@@ -1754,16 +1859,17 @@
       if (DEMO_MODE || API_KEY === 'demo') {
         await sleep(600);
         movers = getDemoMovers();
-      } else if (!API_KEY) {
-        scroll.innerHTML = `<div class="topbar-loading" style="color:var(--text-faint)">Enter API key to see today\'s top movers</div>`;
-        return;
       } else {
-        const data = await fmpGet('/v3/stock_market/gainers');
-        movers = (Array.isArray(data) ? data : []).slice(0, 5).map(s => ({
+        // Use Yahoo Finance screener for top gainers (no API key needed)
+        const resp = await yhooGet(
+          '/v1/finance/screener/predefined/saved?scrIds=day_gainers&count=5&formatted=false'
+        );
+        const quotes = resp?.finance?.result?.[0]?.quotes || [];
+        movers = quotes.slice(0, 5).map(s => ({
           symbol: s.symbol,
-          name: s.name || s.companyName || s.symbol,
-          change: s.changesPercentage || s.changePercent || 0,
-          price: s.price || 0
+          name: s.shortName || s.longName || s.symbol,
+          change: s.regularMarketChangePercent || 0,
+          price: s.regularMarketPrice || 0
         }));
         if (!movers.length) throw new Error('No data');
       }
@@ -1804,112 +1910,4 @@
         </div>
         <div class="tc-right">
           <div class="tc-change pos">+${parseFloat(m.change).toFixed(2)}%</div>
-          <div class="tc-streak ${hot ? 'hot' : ''}">${count > 0 ? '★ ' + count + '×' : '1st time'}</div>
-        </div>
-      `;
-      scroll.appendChild(card);
-    });
-  }
-
-  async function recordTodaysMovers(movers) {
-    const today = todayStr();
-    let log = {};
-    try { log = JSON.parse(localStorage.getItem(LB_LOG_KEY) || '{}'); } catch(e) {}
-    if (log[today]) return;
-    let lb = loadLeaderboard();
-    movers.forEach(m => {
-      if (!lb[m.symbol]) lb[m.symbol] = { symbol: m.symbol, name: m.name, count: 0, lastSeen: null, history: [] };
-      lb[m.symbol].name = m.name;
-      lb[m.symbol].lastSeen = today;
-      if (!lb[m.symbol].history) lb[m.symbol].history = [];
-      lb[m.symbol].history.push(today);
-      const cutoff = daysAgo(365);
-      lb[m.symbol].history = lb[m.symbol].history.filter(d => d >= cutoff);
-      lb[m.symbol].count = lb[m.symbol].history.length;
-    });
-    Object.keys(lb).forEach(k => { if (lb[k].count === 0) delete lb[k]; });
-    saveLeaderboard(lb);
-    log[today] = true;
-    const cutoffDate = daysAgo(400);
-    Object.keys(log).forEach(d => { if (d < cutoffDate) delete log[d]; });
-    localStorage.setItem(LB_LOG_KEY, JSON.stringify(log));
-  }
-
-  function renderLeaderboard() {
-    const lb = loadLeaderboard();
-    const entries = Object.values(lb).sort((a, b) => b.count - a.count).slice(0, 20);
-    const maxCount = entries.length > 0 ? entries[0].count : 1;
-    const table = document.getElementById('lbTable');
-    table.querySelectorAll('.lb-row').forEach(el => el.remove());
-    table.querySelectorAll('.lb-empty').forEach(el => el.remove());
-    if (!entries.length) {
-      const empty = document.createElement('div');
-      empty.className = 'lb-empty';
-      empty.style.cssText = 'grid-column:1/-1;padding:20px 0;color:var(--text-faint);font-size:0.8rem;font-family:JetBrains Mono,monospace;';
-      empty.textContent = 'No data yet — leaderboard builds as you use the app each day.';
-      table.appendChild(empty);
-      return;
-    }
-    entries.forEach((entry, i) => {
-      const pct = Math.round((entry.count / maxCount) * 100);
-      const row = document.createElement('div');
-      row.className = 'lb-row';
-      row.onclick = () => { quickAnalyze(entry.symbol); toggleLeaderboard(false); };
-      row.innerHTML = `
-        <div><span class="lb-row-rank ${i < 3 ? 'top3' : ''}">${i + 1}</span></div>
-        <div style="font-family:'JetBrains Mono',monospace;font-size:0.8rem;letter-spacing:0.1em;font-weight:600;">${entry.symbol}</div>
-        <div style="font-size:0.78rem;color:var(--text-dim);padding-right:12px;">${entry.name || '—'}</div>
-        <div style="font-family:'JetBrains Mono',monospace;font-size:0.85rem;color:var(--gold);">${entry.count} <span style="font-size:0.65rem;color:var(--text-faint);">days</span></div>
-        <div style="font-family:'JetBrains Mono',monospace;font-size:0.72rem;color:var(--text-dim);">${entry.lastSeen ? formatDateShort(entry.lastSeen) : '—'}</div>
-        <div class="lb-bar-wrap"><div class="lb-bar" style="width:${pct}%"></div></div>
-      `;
-      table.appendChild(row);
-    });
-  }
-
-  let lbOpen = false;
-  function toggleLeaderboard(forceState) {
-    lbOpen = forceState !== undefined ? forceState : !lbOpen;
-    const panel = document.getElementById('leaderboardPanel');
-    const btn = document.querySelector('.lb-btn');
-    panel.style.display = lbOpen ? 'block' : 'none';
-    btn.textContent = lbOpen ? '365-DAY BOARD ↑' : '365-DAY BOARD ↓';
-    if (lbOpen) renderLeaderboard();
-  }
-
-  function clearLeaderboard() {
-    if (!confirm('Clear all 365-day leaderboard data?')) return;
-    localStorage.removeItem(LB_KEY);
-    localStorage.removeItem(LB_LOG_KEY);
-    renderLeaderboard();
-    loadTopMovers();
-  }
-
-  function loadLeaderboard() {
-    try { return JSON.parse(localStorage.getItem(LB_KEY) || '{}'); }
-    catch(e) { return {}; }
-  }
-
-  function saveLeaderboard(lb) {
-    localStorage.setItem(LB_KEY, JSON.stringify(lb));
-  }
-
-  function todayStr() {
-    return new Date().toISOString().split('T')[0];
-  }
-
-  function daysAgo(n) {
-    const d = new Date();
-    d.setDate(d.getDate() - n);
-    return d.toISOString().split('T')[0];
-  }
-
-  function formatDateShort(str) {
-    if (!str) return '—';
-    const d = new Date(str + 'T00:00:00');
-    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-  }
-
-</script>
-</body>
-</html>
+          <div class="
